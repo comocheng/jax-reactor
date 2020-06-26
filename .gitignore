@@ -3,3 +3,4 @@ jax_reactor/solver/__pycache__/*
 *.pyc 
 nbs/*
 .vscode/*
+jax-reactor/examples/.ipynb_checkpoints/*.ipynb
