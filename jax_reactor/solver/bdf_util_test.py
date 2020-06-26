@@ -9,7 +9,7 @@ from jax.config import config
 config.update("jax_enable_x64", True)
 
 #local imports
-import bdf_util
+from jax_reactor.solver import bdf_util
 
 #Adapted from tensorflow_probabilty at https://github.com/tensorflow/probability/blob/master/tensorflow_probability/python/math/ode/bdf_util_test.py
 #Accessed 2020-06-24

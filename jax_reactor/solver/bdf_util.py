@@ -193,3 +193,79 @@ def newton(backward_differences:np.ndarray,
     ## Krishna: need to double check this
     return (iterand.converged, iterand.next_backward_difference,
           iterand.next_state_vec, iterand.num_iters)
+
+def update_backward_differences(backward_differences, 
+                                next_backward_difference,
+                                next_state_vec, 
+                                order):
+    """Returns the backward differences for the next time."""
+    new_backward_differences_array = np.zeros((MAX_ORDER+3,np.shape(next_backward_difference)[0]),
+                                              dtype=next_backward_difference.dtype)
+    new_backward_differences_array = jax.ops.index_update(new_backward_differences_array, 
+                                                            jax.ops.index[order + 2],
+                                        next_backward_difference - backward_differences[order + 1])
+    new_backward_differences_array = jax.ops.index_update(new_backward_differences_array,
+                                                         jax.ops.index[order+1],
+                                                         next_backward_difference)
+    def body(vals):
+        k, new_backward_differences_array_ = vals
+        new_backward_differences_array_k = new_backward_differences_array_[k + 1] + backward_differences[k]
+        new_backward_differences_array_ = jax.ops.index_update(new_backward_differences_array_,
+                                                              jax.ops.index[k], 
+                                                               new_backward_differences_array_k)
+        return (k - 1, new_backward_differences_array_)
+    
+    def body_cond(vals):
+        k, _ = vals
+        return k > 0 
+
+    _, new_backward_differences_array = jax.lax.while_loop(
+      body_cond, body,
+      (order, new_backward_differences_array))
+    new_backward_differences_array = jax.ops.index_update(new_backward_differences_array, 
+                                                          jax.ops.index[0],
+                                                          next_state_vec)
+    
+    new_backward_differences = np.stack(new_backward_differences_array)
+    return new_backward_differences
+
+def get_ode_fn_vec(ode_fn,
+                    initial_time, 
+                   initial_state):
+    initial_state_vec = initial_state.flatten() #pylint: disable=unused-variable
+    def ode_fn_vec(inital_time,initial_state_vec):
+        return ode_fn(initial_time, initial_state_vec)
+    return ode_fn_vec
+
+def next_step_size(step_size, 
+                   order, 
+                   error_ratio, 
+                   safety_factor,
+                   min_step_size_factor, 
+                   max_step_size_factor):
+  """Computes the next step size to use.
+
+  Computes the next step size by applying a multiplicative factor to the current
+  step size. This factor is
+  ```none
+  factor_unclamped = error_ratio**(-1. / (order + 1)) * safety_factor
+  factor = clamp(factor_unclamped, min_step_size_factor, max_step_size_factor)
+  ```
+
+  Args:
+    step_size: Scalar float `Tensor` specifying the current step size.
+    order: Scalar integer `Tensor` specifying the order of the method.
+    error_ratio: Scalar float `Tensor` specifying the ratio of the error in the
+      computed state and the tolerance.
+    safety_factor: Scalar float `Tensor`.
+    min_step_size_factor: Scalar float `Tensor` specifying a lower bound on the
+      multiplicative factor.
+    max_step_size_factor: Scalar float `Tensor` specifying an upper bound on the
+      multiplicative factor.
+
+  Returns:
+    Scalar float `Tensor` specifying the next step size.
+  """
+  factor = error_ratio**(-1. / (order + 1.))
+  return step_size * np.clip(
+      safety_factor * factor, min_step_size_factor, max_step_size_factor)
