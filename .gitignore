@@ -1,2 +1,6 @@
 jax_reactor/__pycache__/*
+jax_reactor/solver/__pycache__/*
 *.pyc 
+nbs/*
+.vscode/*
+examples/.ipynb_checkpoints/*
