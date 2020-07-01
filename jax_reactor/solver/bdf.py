@@ -53,7 +53,8 @@ class BDF(object):
         def advance_to_solution_time(vals):
             """Takes multiple steps to advance time to `solution_times[n]`."""
             n, diagnostics, iterand, solver_internal_state, state_vec, times = vals
-            def step_cond(next_time, diagnostics, iterand, *_):
+            def step_cond(vals):
+                next_time, diagnostics, iterand, *_ = vals
                 return (iterand.time < next_time) & (np.equal(diagnostics.status, 0))
 
             nth_solution_time = solution_times[n]
@@ -76,182 +77,177 @@ class BDF(object):
             return (n + 1, diagnostics, iterand, solver_internal_state,
                   state_vec, times)
     
-            def step(next_time,                      #pylint: disable=unreachable
-                     diagnostics,
-                     iterand,
-                     solver_internal_state,
-                     state_vec,
-                     times):
-                """Takes a single step."""
-                distance_to_next_time = next_time - iterand.time
-                overstepped = iterand.new_step_size > distance_to_next_time
-                iterand = iterand._replace(
-                new_step_size=np.where(overstepped, distance_to_next_time,
-                                      iterand.new_step_size),
-                should_update_step_size=overstepped | iterand.should_update_step_size)
-                #lazy jacobian evaluation ?
-                diagnostics = diagnostics._replace(
-                num_jacobian_evaluations=diagnostics.num_jacobian_evaluations + 1)
-                iterand = iterand._replace(
-                jacobian_mat=jacobian_fn(
-                    iterand.time, solver_internal_state.backward_differences[0]),
-                    jacobian_is_up_to_date=True)
-                def maybe_step_cond(accepted, diagnostics, *_):
-                    return np.logical_not(accepted) & np.equal(diagnostics.status, 0)
-                _, diagnostics, iterand, solver_internal_state = jax.lax.while_loop(maybe_step_cond, 
-                                                                                    maybe_step,
-                                                                                    [False, 
-                                                                                     diagnostics, 
-                                                                                     iterand, 
-                                                                                     solver_internal_state])
-                return (next_time, diagnostics, iterand, solver_internal_state,
-                  state_vec, times)
-        
-            def maybe_step(accepted,
-                           diagnostics,
-                           iterand,
-                           solver_internal_state):
-                """Takes a single step only if the outcome has a low enough error."""
-                [
-                num_jacobian_evaluations, num_matrix_factorizations,
-                num_ode_fn_evaluations, status
-                 ] = diagnostics
-                [
-                jacobian_mat, jacobian_is_up_to_date, new_step_size, num_steps,
-                num_steps_same_size, should_update_jacobian, should_update_step_size,
-                time, unitary, upper
-                ] = iterand
-                [backward_differences, order, step_size] = solver_internal_state
-                status = np.where(np.equal(num_steps, self.max_num_steps), -1, 0)
-                backward_differences = np.where(should_update_step_size,
-                                                bdf_util.interpolate_backward_differences(backward_differences, 
-                                                                                          order,
-                                                                                          new_step_size / step_size),
-                                                        backward_differences)
-                step_size = np.where(should_update_step_size, new_step_size, step_size)
-                should_update_factorization = should_update_step_size  #pylint: disable=unused-variable
-                num_steps_same_size = np.where(should_update_step_size, 0,
-                                          num_steps_same_size)
+        def step(vals):
+            """Takes a single step."""
+            next_time, diagnostics, iterand, solver_internal_state, state_vec, times = vals
+            distance_to_next_time = next_time - iterand.time
+            overstepped = iterand.new_step_size > distance_to_next_time
+            iterand = iterand._replace(
+            new_step_size=np.where(overstepped, distance_to_next_time,
+                                    iterand.new_step_size),
+            should_update_step_size=overstepped | iterand.should_update_step_size)
+            #lazy jacobian evaluation ?
+            diagnostics = diagnostics._replace(
+            num_jacobian_evaluations=diagnostics.num_jacobian_evaluations + 1)
+            iterand = iterand._replace(
+            jacobian_mat=jacobian_fn(
+                iterand.time, solver_internal_state.backward_differences[0]),
+                jacobian_is_up_to_date=True)
+            def maybe_step_cond(vals):
+                accepted, diagnostics, *_ = vals
+                return np.logical_not(accepted) & np.equal(diagnostics.status, 0)
+            _, diagnostics, iterand, solver_internal_state = jax.lax.while_loop(maybe_step_cond, 
+                                                                                maybe_step,
+                                                                                (False, 
+                                                                                    diagnostics, 
+                                                                                    iterand, 
+                                                                                    solver_internal_state))
+            return [next_time, diagnostics, iterand, solver_internal_state,
+                state_vec, times]
+    
+        def maybe_step(vals):
+            """Takes a single step only if the outcome has a low enough error."""
+            accepted, diagnostics, iterand, solver_internal_state = vals 
+            [
+            num_jacobian_evaluations, num_matrix_factorizations,
+            num_ode_fn_evaluations, status
+                ] = diagnostics
+            [
+            jacobian_mat, jacobian_is_up_to_date, new_step_size, num_steps,
+            num_steps_same_size, should_update_jacobian, should_update_step_size,
+            time, unitary, upper
+            ] = iterand
+            [backward_differences, order, step_size] = solver_internal_state
+            status = np.where(np.equal(num_steps, self.max_num_steps), -1, 0)
+            backward_differences = np.where(should_update_step_size,
+                                            bdf_util.interpolate_backward_differences(backward_differences, 
+                                                                                        order,
+                                                                                        new_step_size / step_size),
+                                                    backward_differences)
+            step_size = np.where(should_update_step_size, new_step_size, step_size)
+            should_update_factorization = should_update_step_size  #pylint: disable=unused-variable
+            num_steps_same_size = np.where(should_update_step_size, 0,
+                                        num_steps_same_size)
 
-                def update_factorization():
-                    return bdf_util.newton_qr(jacobian_mat,
-                                      self.e.newton_coefficients,
-                                      step_size)
-                #lazy jacobian evaluation?
-                unitary, upper = update_factorization()
-                num_matrix_factorizations += 1
+            def update_factorization():
+                return bdf_util.newton_qr(jacobian_mat,
+                                    self.e.newton_coefficients[order],
+                                    step_size)
+            #lazy jacobian evaluation?
+            unitary, upper = update_factorization()
+            num_matrix_factorizations += 1
 
-                tol = self.p.atol + self.p.rtol * np.abs(backward_differences[0])
-                newton_tol = self.newton_tol_factor * np.linalg.norm(tol)
+            tol = self.p.atol + self.p.rtol * np.abs(backward_differences[0])
+            newton_tol = self.newton_tol_factor * np.linalg.norm(tol)
 
-                [
-                newton_converged, next_backward_difference, next_state_vec,
-                newton_num_iters
-                ] = bdf_util.newton(backward_differences, 
-                                    self.max_num_newton_iters,
-                                    self.e.newton_coefficients[order], 
-                                    self.p.ode_fn_vec,
-                                    order,
-                                    step_size,
+            [
+            newton_converged, next_backward_difference, next_state_vec,
+            newton_num_iters
+            ] = bdf_util.newton(backward_differences, 
+                                self.max_num_newton_iters,
+                                self.e.newton_coefficients[order], 
+                                self.p.ode_fn_vec,
+                                order,
+                                step_size,
+                                time,
+                                newton_tol,
+                                unitary,
+                                upper)
+            num_steps += 1
+            num_ode_fn_evaluations += newton_num_iters
+
+            # If Newton's method failed and the Jacobian was up to date, decrease the
+            # step size.
+            newton_failed = np.logical_not(newton_converged)
+            should_update_step_size = newton_failed & jacobian_is_up_to_date
+            new_step_size = step_size * np.where(should_update_step_size,
+                                            self.newton_step_size_factor, 1.)
+
+            # If Newton's method failed and the Jacobian was NOT up to date, update
+            # the Jacobian.
+            should_update_jacobian = newton_failed & np.logical_not(
+                                        jacobian_is_up_to_date)
+
+            error_ratio = np.where(newton_converged,
+                                    bdf_util.error_ratio(next_backward_difference,
+                                    self.e.error_coefficients[order],
+                                                            tol),
+                                    np.nan)
+            accepted = error_ratio < 1.
+            converged_and_rejected = newton_converged & np.logical_not(accepted)
+
+            # If Newton's method converged but the solution was NOT accepted, decrease
+            # the step size.
+            new_step_size = np.where(converged_and_rejected,
+                                        bdf_util.next_step_size(step_size,
+                                                            order,
+                                                            error_ratio,
+                                                            self.p.safety_factor,
+                                                            self.p.min_step_size_factor,
+                                                            self.p.max_step_size_factor),
+                                        new_step_size)
+            should_update_step_size = should_update_step_size | converged_and_rejected
+
+            # If Newton's method converged and the solution was accepted, update the
+            # matrix of backward differences.
+            time = np.where(accepted, time + step_size, time)
+            backward_differences = np.where(accepted,
+                                            bdf_util.update_backward_differences(backward_differences,
+                                                next_backward_difference,
+                                                next_state_vec, order),
+                                                backward_differences)
+            jacobian_is_up_to_date = jacobian_is_up_to_date & np.logical_not(accepted)
+            num_steps_same_size = np.where(accepted, 
+                                            num_steps_same_size + 1,
+                                            num_steps_same_size)
+
+            # Order and step size are only updated if we have taken strictly more than
+            # order + 1 steps of the same size. This is to prevent the order from
+            # being throttled.
+            should_update_order_and_step_size = accepted & (
+                                                num_steps_same_size > order + 1)
+            new_order = order
+            new_error_ratio = error_ratio
+            for offset in [-1, +1]:
+                proposed_order = np.clip(order + offset, 1, self.max_order)
+                proposed_error_ratio = bdf_util.error_ratio(
+                                                            backward_differences[proposed_order + 1],
+                                                            self.e.error_coefficients[proposed_order], tol)
+                proposed_error_ratio_is_lower = proposed_error_ratio < new_error_ratio
+                new_order = np.where(should_update_order_and_step_size & proposed_error_ratio_is_lower,
+                                        proposed_order, 
+                                        new_order)
+                new_error_ratio = np.where(should_update_order_and_step_size & proposed_error_ratio_is_lower,
+                                            proposed_error_ratio,
+                                            new_error_ratio)
+            order = new_order
+            error_ratio = new_error_ratio
+
+            new_step_size = np.where(should_update_order_and_step_size,
+                                    bdf_util.next_step_size(step_size, order, error_ratio, self.p.safety_factor,
+                                    self.p.min_step_size_factor, self.p.max_step_size_factor),
+                                    new_step_size)
+            should_update_step_size = (should_update_step_size | should_update_order_and_step_size)
+
+            diagnostics = _BDFDiagnostics(num_jacobian_evaluations,
+                                            num_matrix_factorizations,
+                                            num_ode_fn_evaluations, status)
+
+            iterand = _BDFIterand(jacobian_mat,
+                                    jacobian_is_up_to_date,
+                                    new_step_size,
+                                    num_steps,
+                                    num_steps_same_size,
+                                    should_update_jacobian,
+                                    should_update_step_size,
                                     time,
-                                    newton_tol,
                                     unitary,
                                     upper)
-                num_steps += 1
-                num_ode_fn_evaluations += newton_num_iters
 
-                # If Newton's method failed and the Jacobian was up to date, decrease the
-                # step size.
-                newton_failed = np.logical_not(newton_converged)
-                should_update_step_size = newton_failed & jacobian_is_up_to_date
-                new_step_size = step_size * np.where(should_update_step_size,
-                                                self.newton_step_size_factor, 1.)
-
-                # If Newton's method failed and the Jacobian was NOT up to date, update
-                # the Jacobian.
-                should_update_jacobian = newton_failed & np.logical_not(
-                                         jacobian_is_up_to_date)
-
-                error_ratio = np.where(newton_converged,
-                                        bdf_util.error_ratio(next_backward_difference,
-                                        self.e.error_coefficients[order],
-                                                             tol),
-                                        np.nan)
-                accepted = error_ratio < 1.
-                converged_and_rejected = newton_converged & np.logical_not(accepted)
-
-                # If Newton's method converged but the solution was NOT accepted, decrease
-                # the step size.
-                new_step_size = np.where(converged_and_rejected,
-                                          bdf_util.next_step_size(step_size,
-                                                              order,
-                                                              error_ratio,
-                                                              self.p.safety_factor,
-                                                              self.p.min_step_size_factor,
-                                                              self.p.max_step_size_factor),
-                                          new_step_size)
-                should_update_step_size = should_update_step_size | converged_and_rejected
-
-                # If Newton's method converged and the solution was accepted, update the
-                # matrix of backward differences.
-                time = np.where(accepted, time + step_size, time)
-                backward_differences = np.where(accepted,
-                                                bdf_util.update_backward_differences(backward_differences,
-                                                   next_backward_difference,
-                                                   next_state_vec, order),
-                                                   backward_differences)
-                jacobian_is_up_to_date = jacobian_is_up_to_date & np.logical_not(accepted)
-                num_steps_same_size = np.where(accepted, 
-                                               num_steps_same_size + 1,
-                                                num_steps_same_size)
-
-                # Order and step size are only updated if we have taken strictly more than
-                # order + 1 steps of the same size. This is to prevent the order from
-                # being throttled.
-                should_update_order_and_step_size = accepted & (
-                                                    num_steps_same_size > order + 1)
-                new_order = order
-                new_error_ratio = error_ratio
-                for offset in [-1, +1]:
-                    proposed_order = np.clip(order + offset, 1, self.max_order)
-                    proposed_error_ratio = bdf_util.error_ratio(
-                                                                backward_differences[proposed_order + 1],
-                                                                self.e.error_coefficients[proposed_order], tol)
-                    proposed_error_ratio_is_lower = proposed_error_ratio < new_error_ratio
-                    new_order = np.where(should_update_order_and_step_size & proposed_error_ratio_is_lower,
-                                            proposed_order, 
-                                            new_order)
-                    new_error_ratio = np.where(should_update_order_and_step_size & proposed_error_ratio_is_lower,
-                                                proposed_error_ratio,
-                                               new_error_ratio)
-                order = new_order
-                error_ratio = new_error_ratio
-
-                new_step_size = np.where(should_update_order_and_step_size,
-                                        bdf_util.next_step_size(step_size, order, error_ratio, self.p.safety_factor,
-                                        self.p.min_step_size_factor, self.p.max_step_size_factor),
-                                        new_step_size)
-                should_update_step_size = (should_update_step_size | should_update_order_and_step_size)
-
-                diagnostics = _BDFDiagnostics(num_jacobian_evaluations,
-                                              num_matrix_factorizations,
-                                              num_ode_fn_evaluations, status)
-
-                iterand = _BDFIterand(jacobian_mat,
-                                      jacobian_is_up_to_date,
-                                      new_step_size,
-                                      num_steps,
-                                      num_steps_same_size,
-                                      should_update_jacobian,
-                                      should_update_step_size,
-                                      time,
-                                      unitary,
-                                      upper)
-
-                solver_internal_state = _BDFSolverInternalState(backward_differences,
-                                                                order,
-                                                                step_size)
-                return accepted, diagnostics, iterand, solver_internal_state
+            solver_internal_state = _BDFSolverInternalState(backward_differences,
+                                                            order,
+                                                            step_size)
+            return accepted, diagnostics, iterand, solver_internal_state
         
         
         solver_internal_state = self._initialize_solver_internal_state(ode_fn,
@@ -291,10 +287,10 @@ class BDF(object):
             _, diagnostics, iterand, solver_internal_state, state_vec,
             times
         ] = jax.lax.while_loop(advance_to_solution_time_cond,
-                                advance_to_solution_time, [
+                                advance_to_solution_time, (
                                 0, diagnostics, iterand, solver_internal_state,
                                 state_vec, times
-                            ])
+                            ))
         return Results(times=times,
                       states=state_vec,
                       diagnostics=diagnostics,

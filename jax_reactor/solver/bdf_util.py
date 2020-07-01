@@ -132,6 +132,7 @@ def newton(backward_differences:np.ndarray,
         axis=0)
 
     next_time = time + step_size
+    
     def newton_body(iterand):
         """Performs one iteration of Newton's method."""
         next_backward_difference = iterand.next_backward_difference
@@ -185,7 +186,7 @@ def newton(backward_differences:np.ndarray,
       converged=False,
       finished=False,
       next_backward_difference=np.zeros_like(initial_guess),
-      next_state_vec=np.array(initial_guess.copy()),
+      next_state_vec=initial_guess,
       num_iters=0,
       prev_delta_norm=(np.array(-0.)))
     iterand = jax.lax.while_loop(lambda iterand: np.logical_not(iterand.finished),
