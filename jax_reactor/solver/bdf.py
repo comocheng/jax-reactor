@@ -9,6 +9,7 @@ config.update("jax_enable_x64", True)
 
 #local imports 
 from . import bdf_util
+from ..jax_utils import register_pytree_namedtuple
 
 #Adapted from tensorflow_probabilty at https://github.com/tensorflow/probability/blob/master/tensorflow_probability/python/math/ode/bdf.py
 #Accessed 2020-06-26
@@ -50,11 +51,11 @@ class BDF(object):
                solution_times,
                jacobian_fn):
     
-        def advance_to_solution_time(vals):
+        def advance_to_solution_time(_states):
             """Takes multiple steps to advance time to `solution_times[n]`."""
-            n, diagnostics, iterand, solver_internal_state, state_vec, times = vals
-            def step_cond(vals):
-                next_time, diagnostics, iterand, *_ = vals
+            n, diagnostics, iterand, solver_internal_state, state_vec, times = _states
+            def step_cond(_states):
+                next_time, diagnostics, iterand, *_ = _states
                 return (iterand.time < next_time) & (np.equal(diagnostics.status, 0))
 
             nth_solution_time = solution_times[n]
@@ -77,9 +78,9 @@ class BDF(object):
             return (n + 1, diagnostics, iterand, solver_internal_state,
                   state_vec, times)
     
-        def step(vals):
+        def step(_states):
             """Takes a single step."""
-            next_time, diagnostics, iterand, solver_internal_state, state_vec, times = vals
+            next_time, diagnostics, iterand, solver_internal_state, state_vec, times = _states
             distance_to_next_time = next_time - iterand.time
             overstepped = iterand.new_step_size > distance_to_next_time
             iterand = iterand._replace(
@@ -93,8 +94,8 @@ class BDF(object):
             jacobian_mat=jacobian_fn(
                 iterand.time, solver_internal_state.backward_differences[0]),
                 jacobian_is_up_to_date=True)
-            def maybe_step_cond(vals):
-                accepted, diagnostics, *_ = vals
+            def maybe_step_cond(_states):
+                accepted, diagnostics, *_ = _states
                 return np.logical_not(accepted) & np.equal(diagnostics.status, 0)
             _, diagnostics, iterand, solver_internal_state = jax.lax.while_loop(maybe_step_cond, 
                                                                                 maybe_step,
@@ -105,9 +106,9 @@ class BDF(object):
             return [next_time, diagnostics, iterand, solver_internal_state,
                 state_vec, times]
     
-        def maybe_step(vals):
+        def maybe_step(_states):
             """Takes a single step only if the outcome has a low enough error."""
-            accepted, diagnostics, iterand, solver_internal_state = vals 
+            accepted, diagnostics, iterand, solver_internal_state = _states 
             [
             num_jacobian_evaluations, num_matrix_factorizations,
             num_ode_fn_evaluations, status
@@ -279,8 +280,8 @@ class BDF(object):
         state_vec = np.zeros([num_solution_times, state_vec_size],dtype=np.float64)
         times = np.zeros([num_solution_times],dtype=np.float64)
         
-        def advance_to_solution_time_cond(vals):
-            n, diagnostics, *_ = vals
+        def advance_to_solution_time_cond(_states):
+            n, diagnostics, *_ = _states
             return (n < num_solution_times) & (np.equal(diagnostics.status, 0))
 
         [
@@ -322,7 +323,7 @@ class BDF(object):
         ode_fn_vec = bdf_util.get_ode_fn_vec(ode_fn,initial_time,initial_state)
         num_odes = np.shape(initial_state_vec)[0]
 
-        newton_coeffcients, error_cofficients = self._get_coefficients(bdf_coefficients)
+        newton_coefficients, error_cofficients = self._get_coefficients(bdf_coefficients)
 
         _params = SolverParams(atol=atol,
                              rtol=rtol,
@@ -339,7 +340,7 @@ class BDF(object):
                              ode_fn_vec=ode_fn_vec,
                              initial_time=initial_time,
                              num_odes=num_odes)
-        _coefficients = Coefficients(newton_coefficients=newton_coeffcients,
+        _coefficients = Coefficients(newton_coefficients=newton_coefficients,
                                     error_coefficients=error_cofficients)
         return _params,_coefficients
     
@@ -389,89 +390,122 @@ class BDF(object):
         return results
 
 
-class Results(
-    collections.namedtuple(
-        'Results',
-        ['times', 'states', 'diagnostics', 'solver_internal_state'])):
-    """Results returned by a Solver.
 
-    Properties:
-        times: A 1-D float `Tensor` satisfying `times[i] < times[i+1]`.
-        states: A (1+N)-D `Tensor` containing the state at each time. In particular,
-          `states[i]` is the state at time `times[i]`.
-        diagnostics: Object of type `Diagnostics` containing performance
-          information.
-        solver_internal_state: Solver-specific object which can be used to
-        warm-start the solver on a future invocation of `solve`.
-      """
-    __slots__ = ()
-
-
-class _BDFDiagnostics(
-        collections.namedtuple('_BDFDiagnostics', [
-            'num_jacobian_evaluations',
-            'num_matrix_factorizations',
-            'num_ode_fn_evaluations',
-            'status',
-        ])):
-    """See `tfp.math.ode.Diagnostics`."""
-    __slots__ = ()
-
-
-_BDFIterand = collections.namedtuple('_BDFIterand', [
-    'jacobian_mat',
-    'jacobian_is_up_to_date',
-    'new_step_size',
-    'num_steps',
-    'num_steps_same_size',
-    'should_update_jacobian',
-    'should_update_step_size',
-    'time',
-    'unitary',
-    'upper',
-])
-
-
-class _BDFSolverInternalState(
-    collections.namedtuple('_BDFSolverInternalState', [
-        'backward_differences',
-        'order',
-        'step_size',
-    ])):
-    """Returned by the solver to warm start future invocations.
-
-    Properties:
-        backward_differences: 2-D `Tensor` corresponding to a matrix of backward
-        differences upon termination. The `i`-th row contains the vector
-        `BDF(i, y)` (see `BDF` for a definition). In particular, the `0`-th row
-        contains `BDF(0, y) = y`, the state.
-        order: Scalar integer `Tensor` containing the order used by the solver upon
-        termination.
-        step_size: Scalar float `Tensor` containing the step size used by the solver
-        upon termination.
+class Results(collections.namedtuple("Results",
+                                    ["times",
+                                     "states",
+                                     "diagnostics",
+                                     "solver_internal_state"])): #
     """
-    __slots__ = ()
+    namedtuple class to store results from ode solver
+    """
+    def __new__(cls, times, states, diagnostics, solver_internal_state):
+        return super(Results, cls).__new__(
+            cls,  times, states, diagnostics, solver_internal_state)
+
+register_pytree_namedtuple(Results) #JAX pytree 
+
+
+class _BDFDiagnostics(collections.namedtuple('_BDFDiagnostics',[
+                                            'num_jacobian_evaluations',
+                                            'num_matrix_factorizations',
+                                            'num_ode_fn_evaluations',
+                                            'status',
+                                            ])):
+    """
+    namedtuple class to store diagnostics
+    """
+    def __new__(cls, num_jacobian_evaluations, num_matrix_factorizations, 
+                     num_ode_fn_evaluations, status):
+        return super(_BDFDiagnostics, cls).__new__(
+            cls, num_jacobian_evaluations, num_matrix_factorizations, 
+                     num_ode_fn_evaluations, status)
+
+register_pytree_namedtuple(_BDFDiagnostics) #JAX pytree 
+
+
+
+
+
+class _BDFIterand(collections.namedtuple('_BDFIterand',[
+                                         'jacobian_mat',
+                                         'jacobian_is_up_to_date',
+                                         'new_step_size',
+                                         'num_steps',
+                                         'num_steps_same_size',
+                                         'should_update_jacobian',
+                                         'should_update_step_size',
+                                         'time',
+                                         'unitary',
+                                         'upper'])):
+    """
+    namedtuple class to store iterand state
+    """
+    def __new__(cls, jacobian_mat, jacobian_is_up_to_date, 
+                     new_step_size, num_steps, num_steps_same_size,
+                     should_update_jacobian, should_update_step_size,
+                     time, unitary, upper):
+        return super(_BDFIterand, cls).__new__(
+            cls, jacobian_mat, jacobian_is_up_to_date, 
+                     new_step_size, num_steps, num_steps_same_size,
+                     should_update_jacobian, should_update_step_size,
+                     time, unitary, upper)
+
+register_pytree_namedtuple(_BDFIterand) #JAX pytree 
+
+
+class _BDFSolverInternalState(collections.namedtuple('_BDFSolverInternalState', [
+                            'backward_differences',
+                            'order',
+                            'step_size',
+                            ])):
+    """
+    Returned by the solver to warm start future invocations
+    """
+    def __new__(cls, backward_differences, order, step_size):
+        return super(_BDFSolverInternalState, cls).__new__(
+            cls, backward_differences, order, step_size)
+
+register_pytree_namedtuple(_BDFSolverInternalState) #JAX pytree 
+
+
 
 class SolverParams(
       collections.namedtuple('SolverParams',["rtol",
-      "atol",
-      "safety_factor",
-      "min_step_size_factor",
-      "max_step_size_factor",
-      "max_num_steps",
-      "max_order",
-      "max_num_newton_iters",
-      "newton_tol_factor",
-      "newton_step_size_factor",
-      "bdf_coefficients",
-      "initial_state_vec",
-      "ode_fn_vec",
-      "initial_time",                              
-      "num_odes"])):
-    __slots__ = ()
+                             "atol",
+                             "safety_factor",
+                             "min_step_size_factor",
+                             "max_step_size_factor",
+                             "max_num_steps",
+                             "max_order",
+                             "max_num_newton_iters",
+                             "newton_tol_factor",
+                             "newton_step_size_factor",
+                             "bdf_coefficients",
+                             "initial_state_vec",
+                             "ode_fn_vec",
+                             "initial_time",
+                             "num_odes"])):
+    def __new__(cls, rtol, atol, safety_factor, min_step_size_factor,
+                     max_step_size_factor, max_num_steps, max_order, 
+                     max_num_newton_iters, newton_tol_factor, 
+                     newton_step_size_factor, bdf_coefficients,
+                     initial_state_vec, ode_fn_vec, initial_time,
+                     num_odes):
+        return super(SolverParams, cls).__new__(cls, rtol, atol, safety_factor, min_step_size_factor,
+                     max_step_size_factor, max_num_steps, max_order, 
+                     max_num_newton_iters, newton_tol_factor, 
+                     newton_step_size_factor, bdf_coefficients,
+                     initial_state_vec, ode_fn_vec, initial_time,
+                     num_odes)
+
+register_pytree_namedtuple(SolverParams)
 
 
 class Coefficients(
-      collections.namedtuple('Coeffcients',["newton_coefficients",
+      collections.namedtuple('Coefficients',["newton_coefficients",
                                            "error_coefficients"])):
-    __slots__ = ()
+    def __new__(cls, newton_coefficients, error_coefficients):
+        return super(Coefficients, cls).__new__(cls, newton_coefficients, error_coefficients)
+
+register_pytree_namedtuple(Coefficients)
