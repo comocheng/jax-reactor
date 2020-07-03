@@ -8,6 +8,9 @@ from typing import List, Tuple, Callable, Dict, Union
 from jax.config import config
 config.update("jax_enable_x64", True)
 
+#local imports 
+from ..jax_utils import register_pytree_namedtuple
+
 #Adapted from tensorflow_probabilty at https://github.com/tensorflow/probability/blob/master/tensorflow_probability/python/math/ode/bdf_util.py
 #Accessed 2020-06-24
 
@@ -49,6 +52,7 @@ def first_step_size(
     return np.clip(safety_factor * step_size, min_step_size,
                               max_step_size)
 
+@jax.jit
 def interpolation_matrix(order:Union[np.ndarray, int], 
                         step_size_ratio:Union[np.ndarray, float, int])->np.ndarray:
     """Creates the matrix used to interpolate backward differences."""
@@ -69,6 +73,7 @@ def interpolation_matrix(order:Union[np.ndarray, int],
           zeros_matrix)
     return interpolation_matrix_
 
+@jax.jit
 def interpolate_backward_differences(backward_differences:np.ndarray, 
                                     order:Union[np.ndarray, int],
                                      step_size_ratio:Union[np.ndarray, float, int])->np.ndarray:
@@ -96,6 +101,27 @@ _NewtonIterand = namedtuple('NewtonIterand', [
     'prev_delta_norm',
 ])
 
+
+class _NewtonIterand(namedtuple("NewtonIterand",
+                             ["converged",
+                              "finished",
+                              "next_backward_difference",
+                              "next_state_vec",
+                              "num_iters",
+                              "prev_delta_norm"])):  #pylint: disable=inherit-non-class
+    """
+    namedtuple class to store Newton iterand
+    """
+    def __new__(cls, converged, finished, next_backward_difference, 
+                next_state_vec, num_iters, prev_delta_norm):
+        return super(_NewtonIterand, cls).__new__(
+            cls, converged, finished, next_backward_difference, 
+            next_state_vec, num_iters, prev_delta_norm)
+
+register_pytree_namedtuple(_NewtonIterand) #JAX pytree 
+
+
+@jax.jit
 def newton_qr(jacobian_mat:np.ndarray, 
               newton_coefficient:Union[np.ndarray, float, int], 
               step_size:Union[np.ndarray, float, int])->Tuple[np.ndarray, np.ndarray]:
@@ -106,6 +132,7 @@ def newton_qr(jacobian_mat:np.ndarray,
     q, r = np.linalg.qr(newton_matrix)
     return q, r
 
+@partial(jax.jit, static_argnums=(3,))
 def newton(backward_differences:np.ndarray, 
            max_num_iters:Union[np.ndarray, float, int], 
            newton_coefficient:Union[np.ndarray, float, int], 
@@ -231,10 +258,10 @@ def update_backward_differences(backward_differences,
     return new_backward_differences
 
 def get_ode_fn_vec(ode_fn,
-                    initial_time, 
+                   initial_time, 
                    initial_state):
     initial_state_vec = initial_state.flatten() #pylint: disable=unused-variable
-    def ode_fn_vec(inital_time,initial_state_vec):
+    def ode_fn_vec(inital_time, initial_state_vec):
         return ode_fn(initial_time, initial_state_vec)
     return ode_fn_vec
 
