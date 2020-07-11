@@ -1,6 +1,8 @@
 import jax
 import jaxlib
 import jax.numpy as np
+from jax import lax
+from jax import tree_multimap
 import numpy as onp
 import collections
 from functools import partial
@@ -30,6 +32,7 @@ class BDF(object):
                  newton_tol_factor=0.1,
                  newton_step_size_factor=0.5,
                  bdf_coefficients=[0.,0.1850, -1. / 9., -0.0823, -0.0415, 0.],
+                 evaluate_jacobian_lazily=False
                  ):
         self.rtol                 = rtol
         self.atol                 = atol
@@ -43,6 +46,7 @@ class BDF(object):
         self.newton_tol_factor    = newton_tol_factor
         self.newton_step_size_factor = newton_step_size_factor
         self.bdf_coefficients = bdf_coefficients
+        self._evaluate_jacobian_lazily = evaluate_jacobian_lazily
     
     def _solve(self,
                ode_fn,
@@ -88,12 +92,35 @@ class BDF(object):
                                     iterand.new_step_size),
             should_update_step_size=overstepped | iterand.should_update_step_size)
             #lazy jacobian evaluation ?
+            #operand = (diagnostics, iterand, solver_internal_state)
+
+            #def true_fn(operand):
+                #return operand
+            
+            #def false_fn(operand):
+            #if not self._evaluate_jacobian_lazily:
+                #diagnostics, iterand, solver_internal_state = operand
+            
+            jacobian_is_up_to_date = iterand.jacobian_is_up_to_date
+            jacobian_mat = tree_multimap(partial(np.where, self._evaluate_jacobian_lazily and jacobian_is_up_to_date), 
+                           iterand.jacobian_mat, 
+                           jacobian_fn(iterand.time, solver_internal_state.backward_differences[0]))
+            
+            num_jacobian_evaluations = tree_multimap(partial(np.where, self._evaluate_jacobian_lazily and jacobian_is_up_to_date), 
+                           diagnostics.num_jacobian_evaluations, 
+                           diagnostics.num_jacobian_evaluations+1)
+            
             diagnostics = diagnostics._replace(
-            num_jacobian_evaluations=diagnostics.num_jacobian_evaluations + 1)
+            num_jacobian_evaluations=num_jacobian_evaluations)
             iterand = iterand._replace(
-            jacobian_mat=jacobian_fn(
-                iterand.time, solver_internal_state.backward_differences[0]),
-                jacobian_is_up_to_date=True)
+            jacobian_mat=jacobian_mat,
+            jacobian_is_up_to_date=jacobian_is_up_to_date)
+
+            #diagnostics, iterand, solver_internal_state = operand 
+            #return operand
+            
+            #diagnostics, iterand, solver_internal_state =  lax.cond(self._evaluate_jacobian_lazily, operand, true_fn, operand, false_fn)
+
             def maybe_step_cond(_states):
                 accepted, diagnostics, *_ = _states
                 return np.logical_not(accepted) & np.equal(diagnostics.status, 0)
@@ -373,7 +400,7 @@ class BDF(object):
             order=1,
             step_size=first_step_size)
 
-
+    @partial(jax.jit, static_argnums=(0, 1, 5))
     def solve(self, 
               ode_fn,
               initial_time,
