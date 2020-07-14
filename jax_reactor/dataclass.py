@@ -1,6 +1,9 @@
 import dataclasses
-import yaml
-import jax 
+try:
+    import yaml
+except ImportError:
+    from rumael import yaml
+
 import jax.numpy as np
 import numpy as onp
 import cantera as ct
