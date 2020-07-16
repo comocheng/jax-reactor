@@ -46,7 +46,7 @@ def _get_common_params_and_coefficients(ode_fn,
                                                  jnp.array(max_step_size_factor, dtype=jnp.float64)
     max_order, max_num_newton_iters = jnp.array(max_order, dtype=jnp.int64),\
                                       jnp.array(max_num_newton_iters,dtype=jnp.int64)
-    max_num_steps = jnp.array(max_num_steps,dtype=jnp.int64)
+    max_num_steps = jnp.array(max_num_steps,dtype=jnp.float64)
     newton_tol_factor, newton_step_size_factor = jnp.array(newton_tol_factor,dtype=jnp.float64), \
                                                  jnp.array(newton_step_size_factor, dtype=jnp.float64)
     safety_factor = jnp.array(safety_factor, dtype=jnp.float64)
@@ -419,7 +419,7 @@ def _solve(ode_fn,
                         ))
     return Results(times=times,
                    states=state_vec,
-                   diagnostics=[diagnostics, iterand],
+                   diagnostics=diagnostics,
                    solver_internal_state=solver_internal_state,
                    )
 
