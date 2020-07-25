@@ -2,19 +2,22 @@ import dataclasses
 try:
   import yaml
 except ImportError:
-  from rumael import yaml
+  from rumael_yaml import YAML
+
+from collections import defaultdict, namedtuple
+from typing import Callable, Dict, List, Tuple
+
+import cantera as ct
+import numpy as onp
 
 import jax.numpy as np
-import numpy as onp
-import cantera as ct
-from collections import namedtuple, defaultdict
-from typing import List, Tuple, Callable, Dict
 #enable float64 by default
 from jax.config import config
-config.update("jax_enable_x64", True)
 
 #local imports
 from .jax_utils import register_pytree_namedtuple
+
+config.update("jax_enable_x64", True)
 
 
 class NASAPolynomials(
