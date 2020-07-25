@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as np
+from functools import partial
 from collections import namedtuple, defaultdict
 from typing import List, Tuple, Callable, Dict
 #enable float64 by default
@@ -33,6 +34,10 @@ def calculate_rate_constants(T: float, R: float,
   return k
 
 
+vmap_arrhenius = jax.jit(jax.vmap(calculate_rate_constants,
+                                  (None, None, 0)))  #vmap and jit once
+
+
 def troe_falloff_correction(T: float, lPr: np.ndarray, troe_coeffs: np.ndarray,
                             troe_indices: np.ndarray) -> np.ndarray:
   """
@@ -44,13 +49,14 @@ def troe_falloff_correction(T: float, lPr: np.ndarray, troe_coeffs: np.ndarray,
            np.multiply(troe_coeffs[:,0],np.exp(np.divide(-T,troe_coeffs[:,1]))) + \
            np.exp(np.divide(-troe_coeffs[:,2],T))
   lF_cent = np.log10(F_cent)
-  C = -0.4 - 0.67 * lF_cent
-  N = 0.75 - 1.27 * lF_cent
+  C = np.subtract(-0.4, np.multiply(0.67, lF_cent))
+  N = np.subtract(0.75, np.multiply(1.27, lF_cent))
   f1_numerator = lPr + C
-  f1_denomimator_1 = N
-  f1_denomimator_2 = np.multiply(-0.14, f1_numerator)
-  f1 = np.divide(f1_numerator, f1_denomimator_1 + f1_denomimator_2)
-  F = 10**(lF_cent / (1. + f1**2.))
+  f1_denominator_1 = N
+  f1_denominator_2 = np.multiply(0.14, f1_numerator)
+  f1 = np.divide(f1_numerator, np.subtract(f1_denominator_1, f1_denominator_2))
+  F = np.power(10., np.divide(lF_cent, (1. + np.square(f1))))
+  #F = 10**(lF_cent / (1. + f1**2.))
   return F
 
 
@@ -62,7 +68,6 @@ def get_forward_rate_constants(T: float, R: float, C: np.ndarray,
     returns: np.ndarray of forward rate constants
     """
   # vectorize and jit rate constants calculation
-  vmap_arrhenius = jax.vmap(jax.jit(calculate_rate_constants), (None, None, 0))
   initial_k = vmap_arrhenius(T, R, kinetics_coeffs.arrhenius_coeffs)
   C_M = np.matmul(C, kinetics_coeffs.efficiency_coeffs)  # calculate C_M
   three_body_k = np.multiply(
@@ -75,13 +80,12 @@ def get_forward_rate_constants(T: float, R: float, C: np.ndarray,
       [kinetics_data.falloff_indices,
        kinetics_data.troe_falloff_indices]).sort()
   k0 = vmap_arrhenius(T, R, kinetics_coeffs.arrhenius0_coeffs)  # calculate k0
-  kinf = k[total_falloff_indices]  # get kinf
-  Pr = np.divide(
-      np.multiply(k0[total_falloff_indices], C_M[total_falloff_indices]),
-      kinf)  # calculate Pr
+  Pr = np.divide(np.multiply(k0, C_M), k)  # calculate Pr as kinf is k
   log10Pr = np.log10(Pr)
-  falloff_k = np.multiply(k[total_falloff_indices],
-                          (Pr / (1. + Pr)))  # update all type of falloff
+  falloff_k = np.multiply(
+      k[total_falloff_indices],
+      (Pr[total_falloff_indices] /
+       (1. + Pr[total_falloff_indices])))  # update all type of falloff
   kf = jax.ops.index_update(k, jax.ops.index[total_falloff_indices], falloff_k)
   F = troe_falloff_correction(
       T, log10Pr[kinetics_data.troe_falloff_indices],
