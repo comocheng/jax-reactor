@@ -1,7 +1,7 @@
 # JAX-reactor 
 Simulating large chemical mechanisms is vital in combustion, atmospheric chemistry and heterogeneous catalysis. JAX-reactor is a package written in python to simulate large kinetic models leveraging just-in-time (JIT) compilation, automatic differentiaion and vectorization capabilities of awesome [JAX](https://github.com/google/jax) package. JAX uses [XLA](https://www.tensorflow.org/xla) to JIT compile python code to CPU, GPU and TPU. JAX can automatically differentiate python and numpy functions allowing us to efficiently calculate Jacobians of large chemical systems. 
 
-JAX-reactor uses Cantera's recently developed YAML input format to read large detailed kinetic models. JAX-reactor is heavily inspired by a similar package written in PyTorch called [reactorch](https://github.com/DENG-MIT/reactorch). JAX-reactor is a research project and is in early stages of development. 
+JAX-reactor uses Cantera's recently developed YAML input format to read large detailed kinetic models. Currently, JAX-reactor provides a basic JAX implementation of backward differentiation formula ([BDF](https://github.com/comocheng/jax-reactor/tree/master/jax_reactor/solver)) solver to integrate stiff chemical systems. JAX-reactor is heavily inspired by a similar package written in PyTorch called [reactorch](https://github.com/DENG-MIT/reactorch). JAX-reactor is a research project and is in early stages of development. 
 
 ## Installation
 First set up a conda environment
