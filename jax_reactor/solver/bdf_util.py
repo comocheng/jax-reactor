@@ -54,7 +54,6 @@ def first_step_size(atol: Union[np.ndarray, float],
   return np.clip(safety_factor * step_size, min_step_size, max_step_size)
 
 
-@jax.jit
 def interpolation_matrix(
     order: Union[np.ndarray, int], step_size_ratio: Union[np.ndarray, float,
                                                           int]) -> np.ndarray:
@@ -77,7 +76,6 @@ def interpolation_matrix(
   return interpolation_matrix_
 
 
-@jax.jit
 def interpolate_backward_differences(
     backward_differences: np.ndarray, order: Union[np.ndarray, int],
     step_size_ratio: Union[np.ndarray, float, int]) -> np.ndarray:
