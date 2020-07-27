@@ -11,13 +11,11 @@ import cantera as ct
 import numpy as onp
 
 import jax.numpy as np
-#enable float64 by default
-from jax.config import config
+
 
 #local imports
 from .jax_utils import register_pytree_namedtuple
 
-config.update("jax_enable_x64", True)
 
 
 class NASAPolynomials(

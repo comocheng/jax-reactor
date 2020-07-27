@@ -5,8 +5,6 @@ import numpy as onp
 from functools import partial
 from collections import namedtuple
 from typing import List, Tuple, Callable, Dict, Union
-from jax.config import config
-config.update("jax_enable_x64", True)
 
 #local imports
 from ..jax_utils import register_pytree_namedtuple

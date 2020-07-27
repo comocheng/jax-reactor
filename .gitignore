@@ -1,5 +1,6 @@
 jax_reactor/__pycache__/*
 jax_reactor/solver/__pycache__/*
+jax_reactor/solver/jaxy_bdf.py
 *.pyc 
 nbs/*
 jax_nbs/*

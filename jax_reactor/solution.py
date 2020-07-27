@@ -3,9 +3,7 @@ import jax.numpy as np
 import cantera as ct
 from collections import namedtuple, defaultdict
 from typing import List, Tuple, Callable, Dict, Union
-#enable float64 by default
-from jax.config import config
-config.update("jax_enable_x64", True)
+
 
 #local imports
 from .dataclass import NASAPolynomials, KineticsCoeffs, KineticsData, GasInfo, ProductionRates

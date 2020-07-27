@@ -3,9 +3,7 @@ import jax.numpy as np
 from functools import partial
 from collections import namedtuple, defaultdict
 from typing import List, Tuple, Callable, Dict
-#enable float64 by default
-from jax.config import config
-config.update("jax_enable_x64", True)
+
 
 #local imports
 from .dataclass import NASAPolynomials, KineticsCoeffs, KineticsData, GasInfo
