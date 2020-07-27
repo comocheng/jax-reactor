@@ -97,5 +97,5 @@ def get_dYdt(P: Union[float, np.ndarray], R: float, gas_info: GasInfo,
   Tdot = -(np.matmul(enthalpy_data.partial_molar_enthalpies,
                      production_rates.wdot)) / (density_mass * cp_mass)
   dYdt = np.hstack((Tdot, Ydot))
-  dYdt = delete_small_numbers(dYdt)
+  #dYdt = delete_small_numbers(dYdt)
   return dYdt
