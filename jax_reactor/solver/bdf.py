@@ -107,10 +107,11 @@ def _initialize_solver_internal_state(
                                  step_size=first_step_size)
 
 
-def _solve(ode_fn, initial_time, initial_state, solution_times, jacobian_fn,
+def _solve(ode_fn, initial_state, solution_times, jacobian_fn,
            atol, rtol, min_step_size_factor, max_step_size_factor, max_order,
            max_num_newton_iters, max_num_steps, newton_tol_factor,
            newton_step_size_factor, safety_factor, bdf_coefficients):
+  initial_time = solution_times[0]
   def advance_to_solution_time(_states):
     """Takes multiple steps to advance time to `solution_times[n]`."""
     n, diagnostics, iterand, solver_internal_state, state_vec, times = _states
@@ -344,9 +345,8 @@ def _solve(ode_fn, initial_time, initial_state, solution_times, jacobian_fn,
   )
 
 
-@partial(jax.jit, static_argnums=(0, 4))
+@partial(jax.jit, static_argnums=(0, 3))
 def bdf_solve(ode_fn,
-              initial_time,
               initial_state,
               solution_times,
               jacobian_fn,
@@ -362,7 +362,7 @@ def bdf_solve(ode_fn,
               safety_factor=0.9,
               bdf_coefficients=[0., 0.1850, -1. / 9., -0.0823, -0.0415, 0.]):
 
-  results = _solve(ode_fn, initial_time, initial_state, solution_times,
+  results = _solve(ode_fn, initial_state, solution_times,
                    jacobian_fn, atol, rtol, min_step_size_factor,
                    max_step_size_factor, max_order, max_num_newton_iters,
                    max_num_steps, newton_tol_factor, newton_step_size_factor,

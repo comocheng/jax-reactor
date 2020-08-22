@@ -26,7 +26,7 @@ def lax_scan_to_end_time(ode_fn: Callable, jacobian_fn: Callable,
 
     def step(_state):
       i, current_state, current_time, _ = _state
-      results = bdf_solve(ode_fn, current_time, current_state,
+      results = bdf_solve(ode_fn, current_state,
                           np.array([current_time, current_time + dt]),
                           jacobian_fn)
       next_state = results.states[-1]
