@@ -23,7 +23,7 @@ pip install --upgrade jax jaxlib  # CPU-only version
 For GPU version of JAX please follow the official installation instructions at [JAX GPU installation](https://github.com/google/jax#pip-installation)
 
 ### Known JAX GPU build issue
-If you want to use JAX on CentOS-7 you need too build JAX from source following instructions at https://github.com/google/jax/issues/2083 
+If you want to use JAX on CentOS-7 you need to build JAX from source following instructions at https://github.com/google/jax/issues/2083 
 
 Once the enviroment is setup install JAX-reactor:
 ```
